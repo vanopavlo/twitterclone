@@ -2,15 +2,18 @@ import shutil
 import uuid
 from collections import defaultdict
 from contextlib import asynccontextmanager
+from typing import List, Optional
 
-from fastapi import FastAPI, File, Header, HTTPException, Path, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Path, UploadFile, Body, Depends, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import (Base, Follow, Like, Media, Tweet, TweetIN, Users, engine,
-                      get_user_by_api_key, session)
+from database import (Base, Follow, Like, Media, Tweet, Users, engine,
+                      get_user_by_api_key, session, TweetIN, get_session)
+
 
 
 @asynccontextmanager
@@ -38,25 +41,18 @@ async def root():
 
 
 
-@app.post(
-    "/api/tweets",
-    summary="Создать новый твит",
-    description="Создает новый твит с текстом и опциональными медиафайлами. "
-    "Медиа загружаются предварительно через `/api/medias` и передаются их ID.",
-    response_description="ID созданного твита",
-    tags=["Tweets"],
-    status_code=201,
-)
+@app.post("/api/tweets", status_code=201)
 async def create_tweet(
-    tweet_in: TweetIN,
-    api_key: str = Header(..., description="API ключ авторизованного пользователя"),
-) -> dict:
+    tweet: TweetIN,
+    api_key: str = Header(...),
+):
+
     user = await get_user_by_api_key(api_key=api_key, session=session)
 
     new_post = Tweet(
         user_id=user.id,
-        tweet_data=tweet_in.tweet_data,
-        tweet_media_ids=tweet_in.tweet_media_ids,
+        tweet_data=tweet.tweet_data,  # ✅ Доступ через .
+        tweet_media_ids=tweet.tweet_media_ids,  # ✅ Доступ через .
     )
 
     session.add(new_post)
@@ -65,61 +61,24 @@ async def create_tweet(
     return {"result": True, "tweet_id": new_post.id}
 
 
-@app.get("/api/media/{media_link}")
-async def get_media(media_link: str):
-    file_path = f"media/{media_link}"
-    return FileResponse(file_path)
+@app.get("/api/medias/{media_id}")
+async def get_media(media_id: int):
+    media = await session.get(Media, media_id)
+    return Response(
+        content=media.file,  # bytes из LargeBinary
+        media_type="image/jpeg"  # или media.mime_type
+    )
 
 
-@app.post(
-    "/api/medias",
-    summary="Добавить фото к твиту",
-    description="Записывает файл на диск и делает запись о нем в бд",
-    response_description="ID созданной записи о файле",
-    tags=["Medias"],
-    status_code=201,
-)
-async def add_photo(
-    api_key: str = Header(..., description="API ключ авторизованного пользователя"),
-    file: UploadFile = File(...),
-) -> dict:
 
-
-    await get_user_by_api_key(api_key=api_key, session=session)
-
-    filename = file.filename
-    unique_filename = f"{uuid.uuid4()}_{filename}"
-    file_path = f"media/{unique_filename}"
-
-    try:
-        with open(file_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
-
-    new_photo = Media(file_path=file_path)
-
-    session.add(new_photo)
-    await session.commit()
-    return {"result": True, "media_id": new_photo.id}
-
-
-# @app.get("/api/media/{media_id}")
-# async def get_media(media_id: int):
-#     media = await session.get(Media, media_id)
-#     return Response(
-#         content=media.file,  # bytes из LargeBinary
-#         media_type="image/jpeg"  # или media.mime_type
-#     )
-#
-# @app.post("/api/medias")
-# async def upload_media(file: UploadFile = File(...)):
-#     content = await file.read()  # bytes
-#     media = Media(file=content)
-#     session.add(media)
-#     await session.commit()
-#     return {"id": media.id}
-
+@app.post("/api/medias")
+async def upload_media(file: UploadFile = File(...), session: AsyncSession = Depends(get_session)):
+    print(file)
+    content = await file.read()
+    media = Media(file=content)
+    session.add(media)
+    await session.flush()
+    return {"result": True, "media_id": media.id}
 @app.delete(
     "/api/tweets/{tweet_id}",
     summary="Удалить твит",
@@ -259,7 +218,7 @@ async def get_tweets(
         select(
             Tweet.id,
             Tweet.tweet_data,
-            func.array_agg(Media.file_path).label("attachments"),
+            func.array_agg(Media.id).label("attachments"),
             Users.id.label("user_id"),
             Users.name.label("user_name"),
         )
@@ -280,16 +239,25 @@ async def get_tweets(
         tweet_likes[tweet_id].append({"user_id": user_id, "name": user_name})
 
     tweets_list = []
+
     for tweet_id, content, attachments, user_id, user_name in tweets_data:
-        tweets_list.append(
-            {
-                "id": tweet_id,
-                "content": content,
-                "attachments": attachments or [],
-                "author": {"id": user_id, "name": user_name},
-                "likes": tweet_likes[tweet_id],
-            }
-        )
+
+        tweets_list.append({
+            "id": tweet_id,
+            "content": content,
+            "attachments": None if attachments == [None] else [f"/api/medias/{media_id}"  for media_id in attachments],  # ⭐ Полные URL!
+            "author": {"id": user_id, "name": user_name},
+            "likes": tweet_likes[tweet_id],
+        })
+        # tweets_list.append(
+        #     {
+        #         "id": tweet_id,
+        #         "content": content,
+        #         "attachments": attachments or [],
+        #         "author": {"id": user_id, "name": user_name},
+        #         "likes": tweet_likes[tweet_id],
+        #     }
+        # )
 
     return {"result": True, "tweets": tweets_list}
 
@@ -413,10 +381,12 @@ async def get_user_info(user_id: int = Path(..., title="ID пользовате�
     }
 
 
-app.mount("", StaticFiles(directory="."), name="root")
 
+app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/css", StaticFiles(directory="static/css"), name="css")     # ← ДОБАВИТЕ
+app.mount("/js", StaticFiles(directory="static/js"), name="js")
 
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="localhost", port=8000)
+# if __name__ == "__main__":
+#     import uvicorn
+#
+#     uvicorn.run(app, host="localhost", port=8000)

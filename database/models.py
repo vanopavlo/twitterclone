@@ -22,6 +22,17 @@ async_session = async_sessionmaker(
 )
 session = async_session()
 
+async def get_session() -> AsyncSession:
+    async with async_session() as session:
+        try:
+            yield session
+            await session.commit()
+        except:
+            await session.rollback()
+            raise
+            await session.close()
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -53,8 +64,8 @@ class Tweet(Base):
 
 class Media(Base):
     __tablename__ = "medias"
-    id = Column(Integer, primary_key=True)
-    file_path = Column(String(500), nullable=False)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    file = Column(LargeBinary)
     created_at = Column(DateTime, default=func.now())
 
 
