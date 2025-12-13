@@ -1,0 +1,17 @@
+fastapi>=0.95.0
+uvicorn==0.23.1
+sqlalchemy>=2.0.0
+aiosqlite>=0.18.0
+greenlet>=2.0.0
+dotenv==0.9.9
+asyncpg==0.30.0
+python-multipart
+pytest==8.3.2
+pytest-asyncio
+
+black==21.12b0
+flake8==4.0.1
+flake8-bugbear==22.1.11
+flake8-pie==0.15.0
+isort==5.9.3
+mypy==0.931
