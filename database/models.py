@@ -1,17 +1,13 @@
-import asyncio
 import os
-from os.path import exists
 from typing import Optional, List
 
 from dotenv import load_dotenv
-from pydantic import BaseModel
 from sqlalchemy import (Column, DateTime, ForeignKey, Integer, String, Text,
-                        UniqueConstraint, func, join, select, LargeBinary)
+                        UniqueConstraint, func, LargeBinary)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
                                     create_async_engine)
-from sqlalchemy.orm import (DeclarativeBase, Mapped, declarative_base,
-                            relationship, mapped_column)
+from sqlalchemy.orm import (DeclarativeBase, Mapped, relationship, mapped_column)
 
 load_dotenv()
 
@@ -60,6 +56,7 @@ class Tweet(Base):
     likes = relationship(
         "Like", back_populates="tweet", cascade="all, delete", passive_deletes=True
     )
+
 
 
 class Media(Base):

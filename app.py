@@ -1,13 +1,10 @@
-import shutil
-import uuid
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from typing import List, Optional
 
-from fastapi import FastAPI, File, Header, HTTPException, Path, UploadFile, Body, Depends, Request
+from fastapi import FastAPI, File, Header, HTTPException, Path, UploadFile, Depends
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import func, select
+from sqlalchemy import func, select, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,15 +30,31 @@ app = FastAPI(
     version="1.0.0",
 )
 
-
-@app.get("/")
+@app.get(
+    "/",
+    summary="Главная страница",
+    description="Возвращает HTML-страницу с клиентским интерфейсом приложения.",
+    tags=["Frontend"],
+    response_description="HTML страница главного интерфейса",
+) #11
 async def root():
     return FileResponse("templates/index.html")
 
 
 
 
-@app.post("/api/tweets", status_code=201)
+
+@app.post(
+    "/api/tweets",
+    summary="Создать твит",
+    description=(
+        "Создает новый твит от имени авторизованного пользователя. "
+        "Тело запроса содержит текст твита и, при необходимости, список ID медиа-файлов."
+    ),
+    tags=["Tweets"],
+    response_description="Результат создания твита и его идентификатор",
+    status_code=201,
+)
 async def create_tweet(
     tweet: TweetIN,
     api_key: str = Header(...),
@@ -61,7 +74,13 @@ async def create_tweet(
     return {"result": True, "tweet_id": new_post.id}
 
 
-@app.get("/api/medias/{media_id}")
+@app.get(
+    "/api/medias/{media_id}",
+    summary="Получить медиа-файл",
+    description="Возвращает бинарное содержимое медиа-файла по его ID.",
+    tags=["Media"],
+    response_description="Бинарные данные медиа-файла",
+)
 async def get_media(media_id: int):
     media = await session.get(Media, media_id)
     return Response(
@@ -71,7 +90,14 @@ async def get_media(media_id: int):
 
 
 
-@app.post("/api/medias")
+@app.post(
+    "/api/medias",
+    summary="Загрузить медиа-файл",
+    description="Принимает файл и сохраняет его в базе как медиа-объект.",
+    tags=["Media"],
+    response_description="Результат операции и ID загруженного медиа-файла",
+    status_code=201,
+)
 async def upload_media(file: UploadFile = File(...), session: AsyncSession = Depends(get_session)):
     print(file)
     content = await file.read()
@@ -79,6 +105,8 @@ async def upload_media(file: UploadFile = File(...), session: AsyncSession = Dep
     session.add(media)
     await session.flush()
     return {"result": True, "media_id": media.id}
+
+
 @app.delete(
     "/api/tweets/{tweet_id}",
     summary="Удалить твит",
@@ -86,19 +114,12 @@ async def upload_media(file: UploadFile = File(...), session: AsyncSession = Dep
     tags=["Tweets"],
     response_description="Результат удаления",
     status_code=200,
-)
+) #!!
 async def delete_tweet(
     tweet_id: int = Path(..., title="ID твита для удаления"),
     api_key: str = Header(..., description="API ключ авторизованного пользователя"),
 ) -> dict:
-    """
-    Удаляет твит с указанным ID.
 
-    Ошибки:
-    - 401: Неверный или отсутствующий `api_key`
-    - 403: Попытка удалить чужой твит
-    - 404: Твит с данным ID не найден
-    """
 
     user = await get_user_by_api_key(api_key, session)
 
@@ -109,8 +130,14 @@ async def delete_tweet(
             .where((Tweet.id == tweet_id) & (Users.id == user.id))
         )
     ).scalar_one_or_none()
+
     if not tweet:
         raise HTTPException(status_code=404, detail="Tweet not found")
+
+    if tweet.tweet_media_ids:
+        await session.execute(
+            delete(Media).where(Media.id.in_(tweet.tweet_media_ids))
+        )
     await session.delete(tweet)
     await session.commit()
     return {"result": True}
@@ -123,22 +150,22 @@ async def delete_tweet(
     tags=["Tweets"],
     response_description="Результат операции",
     status_code=200
-)
+) #!!
 async def like_tweet(
     api_key: str = Header(..., description="API ключ авторизованного пользователя"),
     tweet_id: int = Path(..., title="ID твита для лайка"),
 ) -> dict:
 
 
-    user = await get_user_by_api_key(api_key, session)
+    await get_user_by_api_key(api_key, session)
     tweet = (
         await session.execute(select(Tweet).where(Tweet.id==tweet_id))
     ).scalar_one_or_none()
     if not tweet:
         raise HTTPException(status_code=404, detail="Tweet not found")
 
-    session.add(Like(user_id=user.id, tweet_id=tweet_id))
-    await session.commit()
+    # session.add(Like(user_id=user.id, tweet_id=tweet_id))
+    # await session.commit()
 
     return {"result": True}
 
@@ -150,7 +177,7 @@ async def like_tweet(
     tags=["Tweets"],
     response_description="Результат операции",
     status_code=200,
-)
+) #!!!
 async def delete_like_tweet(
     api_key: str = Header(..., description="API ключ авторизованного пользователя"),
     tweet_id: int = Path(..., title="ID твита для удаления лайка"),
@@ -162,7 +189,7 @@ async def delete_like_tweet(
         )
     ).scalar_one_or_none()
     if not like:
-        raise HTTPException(status_code=404, detail="Tweet not found")
+        raise HTTPException(status_code=404, detail="Like not found")
 
     await session.delete(like)
     await session.commit()
@@ -200,27 +227,24 @@ async def follow_user(
     return {"result": True}
 
 
+
 @app.get(
     "/api/tweets",
     summary="Получить список твитов",
-    description="Возвращает список твитов с вложениями, авторами и лайками.",
+    description=(
+        "Возвращает список твитов с информацией об авторе, прикреплённых медиа "
+        "и пользователях, поставивших лайк. Результат отсортирован по количеству лайков."
+    ),
     tags=["Tweets"],
-    response_description="Список твитов с подробной информацией",
-    status_code=200,
+    response_description="Список твитов с метаданными",
 )
-async def get_tweets(
-    api_key: str = Header(..., description="API ключ авторизованного пользователя")
-) -> dict:
+async def get_tweets(api_key: str = Header(...)) -> dict:
+    await get_user_by_api_key(api_key, session)
 
-
-    user = await get_user_by_api_key(api_key, session)
     tweets_data = await session.execute(
         select(
-            Tweet.id,
-            Tweet.tweet_data,
-            func.array_agg(Media.id).label("attachments"),
-            Users.id.label("user_id"),
-            Users.name.label("user_name"),
+            Tweet.id, Tweet.tweet_data, func.array_agg(Media.id).label("attachments"),
+            Users.id.label("user_id"), Users.name.label("user_name")
         )
         .select_from(Tweet)
         .outerjoin(Media, Tweet.tweet_media_ids.any(Media.id))
@@ -229,9 +253,7 @@ async def get_tweets(
     )
 
     likes_data = await session.execute(
-        select(Like.tweet_id, Like.user_id, Users.name).join(
-            Users, Like.user_id == Users.id
-        )
+        select(Like.tweet_id, Like.user_id, Users.name).join(Users, Like.user_id == Users.id)
     )
 
     tweet_likes = defaultdict(list)
@@ -239,28 +261,18 @@ async def get_tweets(
         tweet_likes[tweet_id].append({"user_id": user_id, "name": user_name})
 
     tweets_list = []
-
     for tweet_id, content, attachments, user_id, user_name in tweets_data:
-
+        print(tweet_likes[tweet_id])
         tweets_list.append({
-            "id": tweet_id,
-            "content": content,
-            "attachments": None if attachments == [None] else [f"/api/medias/{media_id}"  for media_id in attachments],  # ⭐ Полные URL!
+            "id": tweet_id, "content": content,
+            "attachments": None if attachments == [None] else [f"/api/medias/{media_id}" for media_id in attachments],
             "author": {"id": user_id, "name": user_name},
             "likes": tweet_likes[tweet_id],
         })
-        # tweets_list.append(
-        #     {
-        #         "id": tweet_id,
-        #         "content": content,
-        #         "attachments": attachments or [],
-        #         "author": {"id": user_id, "name": user_name},
-        #         "likes": tweet_likes[tweet_id],
-        #     }
-        # )
+
+    tweets_list.sort(key=lambda t: len(tweet_likes[t["id"]]), reverse=True)
 
     return {"result": True, "tweets": tweets_list}
-
 
 @app.delete(
     "/api/users/{follow_id}/follow",
@@ -386,7 +398,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/css", StaticFiles(directory="static/css"), name="css")     # ← ДОБАВИТЕ
 app.mount("/js", StaticFiles(directory="static/js"), name="js")
 
-# if __name__ == "__main__":
-#     import uvicorn
-#
-#     uvicorn.run(app, host="localhost", port=8000)
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="localhost", port=8000)

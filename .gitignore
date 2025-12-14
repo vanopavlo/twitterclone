@@ -1,0 +1,145 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+pip-wheel-metadata/
+share/python-wheels/
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Pytest
+.pytest_cache/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+htmlcov/
+.tox/
+.nox/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre
+.pyre/
+
+# Pycharm / JetBrains
+.idea/
+*.iml
+*.iws
+out/
+
+# VS Code
+.vscode/
+
+# VS Code settings sync
+.sync/
+
+# Local env files
+.env
+.env.*
+.envrc
+.aws/
+.credentials
+
+# SQLite / DB files
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# SQLAlchemy Alembic
+alembic.ini
+alembic/
+migrations/
+
+# Logs
+*.log
+logs/
+debug.log
+*.pid
+
+# Static / media / uploads
+uploads/
+media/
+staticfiles/
+static/.cache
+
+# Docker
+docker-compose.override.yml
+docker-compose.*.yml
+**/Dockerfile.*
+**/.docker
+
+# Distribution / installers
+*.exe
+*.msi
+*.msm
+*.msp
+
+# Sphinx documentation
+docs/_build/
+
+# Jupyter
+.ipynb_checkpoints
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor backups
+*~
+*.swp
+*.swo
+
+# Coverage and reports
+.coverage
+coverage/
+coverage.*,cover
+
+# PyInstaller
+#  Often created by a pyinstaller build
+dist/
+build/
+
+# IDE specific
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# End of file
